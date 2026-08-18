@@ -40,19 +40,23 @@ class FileServiceTest {
 
     @Mock
     private FileMetadataRepository fileMetadataRepository;
+
     @Mock
     private UserRepository userRepository;
+
     @Mock
     private FolderRepository folderRepository;
+
     @Mock
     private ShareLinkRepository shareLinkRepository;
+
     @Mock
     private StorageService storageService;
+
     @Mock
     private FileStorageMetrics metrics;
 
     private FileService fileService;
-
     private User owner;
 
     @BeforeEach
@@ -80,64 +84,100 @@ class FileServiceTest {
         when(userRepository.findWithLockById(1L)).thenReturn(Optional.of(owner));
 
         MockMultipartFile file = new MockMultipartFile(
-                "file", "buyuk.txt", "text/plain",
-                "bu icerik kesinlikle 10 byte'tan uzun".getBytes());
+                "file",
+                "buyuk.txt",
+                "text/plain",
+                "bu icerik kesinlikle 10 byte'tan uzun".getBytes()
+        );
 
         assertThatThrownBy(() -> fileService.uploadFile(1L, file, null))
                 .isInstanceOf(QuotaExceededException.class);
 
-        verify(storageService, never()).upload(any(), anyLong(), anyString(), anyString());
+        verify(storageService, never())
+                .upload(any(), anyLong(), anyString(), anyString());
+
         verify(fileMetadataRepository, never()).save(any());
         verify(metrics, never()).incrementUpload();
     }
 
     @Test
     @DisplayName("Basarili yukleme: MinIO'ya yazilir, metadata kaydedilir, kota guncellenir, metrik artar")
-    void uploadFile_whenSuccessful_savesMetadataAndIncrementsMetric() {
-        when(userRepository.findWithLockById(1L)).thenReturn(Optional.of(owner));
+    void uploadFile_whenSuccessful_savesMetadataAndIncrementsMetric() throws Exception {
+        when(userRepository.findWithLockById(1L))
+                .thenReturn(Optional.of(owner));
 
         MockMultipartFile file = new MockMultipartFile(
-                "file", "test.txt", "text/plain", "merhaba".getBytes());
+                "file",
+                "test.txt",
+                "text/plain",
+                "merhaba".getBytes()
+        );
 
         FileMetadata savedEntity = new FileMetadata();
         savedEntity.setId(42L);
-        when(fileMetadataRepository.save(any(FileMetadata.class))).thenReturn(savedEntity);
 
-        FileMetadata result = fileService.uploadFile(1L, file, null);
+        when(fileMetadataRepository.save(any(FileMetadata.class)))
+                .thenReturn(savedEntity);
+
+        FileMetadata result =
+                fileService.uploadFile(1L, file, null);
 
         assertThat(result.getId()).isEqualTo(42L);
-        verify(storageService, times(1)).upload(any(InputStream.class), eq((long) file.getBytes().length),
-                eq("text/plain"), anyString());
+
+        verify(storageService, times(1))
+                .upload(
+                        any(InputStream.class),
+                        eq((long) file.getBytes().length),
+                        eq("text/plain"),
+                        anyString()
+                );
+
         verify(metrics, times(1)).incrementUpload();
         verify(metrics, never()).incrementUploadFailed();
 
+        ArgumentCaptor<User> userCaptor =
+                ArgumentCaptor.forClass(User.class);
 
-        ArgumentCaptor<User> userCaptor = ArgumentCaptor.forClass(User.class);
-        verify(userRepository, times(1)).save(userCaptor.capture());
-        assertThat(userCaptor.getValue().getUsedStorage()).isEqualTo(file.getBytes().length);
+        verify(userRepository, times(1))
+                .save(userCaptor.capture());
+
+        assertThat(userCaptor.getValue().getUsedStorage())
+                .isEqualTo(file.getBytes().length);
     }
 
     @Test
     @DisplayName("Metadata kaydi basarisiz olursa MinIO'daki nesne geri silinir ve hata metrik'i artar")
     void uploadFile_whenMetadataSaveFails_rollsBackStorageObject() {
-        when(userRepository.findWithLockById(1L)).thenReturn(Optional.of(owner));
+        when(userRepository.findWithLockById(1L))
+                .thenReturn(Optional.of(owner));
 
         MockMultipartFile file = new MockMultipartFile(
-                "file", "test.txt", "text/plain", "merhaba".getBytes());
+                "file",
+                "test.txt",
+                "text/plain",
+                "merhaba".getBytes()
+        );
 
         when(fileMetadataRepository.save(any(FileMetadata.class)))
                 .thenThrow(new RuntimeException("DB baglantisi koptu"));
 
-        assertThatThrownBy(() -> fileService.uploadFile(1L, file, null))
+        assertThatThrownBy(() ->
+                fileService.uploadFile(1L, file, null)
+        )
                 .isInstanceOf(RuntimeException.class)
                 .hasMessage("DB baglantisi koptu");
 
+        verify(storageService, times(1))
+                .upload(any(), anyLong(), anyString(), anyString());
 
-        verify(storageService, times(1)).upload(any(), anyLong(), anyString(), anyString());
+        verify(storageService, times(1))
+                .delete(anyString());
 
-        verify(storageService, times(1)).delete(anyString());
-        verify(metrics, times(1)).incrementUploadFailed();
-        verify(metrics, never()).incrementUpload();
+        verify(metrics, times(1))
+                .incrementUploadFailed();
+
+        verify(metrics, never())
+                .incrementUpload();
     }
 
     @Test
@@ -146,12 +186,14 @@ class FileServiceTest {
         when(fileMetadataRepository.findByIdAndOwnerIdAndDeletedFalse(99L, 1L))
                 .thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> fileService.getOwnedFile(99L, 1L))
+        assertThatThrownBy(() ->
+                fileService.getOwnedFile(99L, 1L)
+        )
                 .isInstanceOf(FileNotFoundException.class);
     }
 
     @Test
-    @DisplayName("Dosya silme MinIO'ya HIC dokunmaz - sadece soft-delete isaretler (Faz 4 tasarim karari)")
+    @DisplayName("Dosya silme MinIO'ya HIC dokunmaz - sadece soft-delete isaretler")
     void deleteFile_marksSoftDeleteWithoutTouchingStorage() {
         FileMetadata file = new FileMetadata();
         file.setId(5L);
@@ -160,9 +202,14 @@ class FileServiceTest {
 
         when(fileMetadataRepository.findByIdAndOwnerIdAndDeletedFalse(5L, 1L))
                 .thenReturn(Optional.of(file));
-        when(shareLinkRepository.findAllByFileId(5L)).thenReturn(List.of());
+
+        when(shareLinkRepository.findAllByFileId(5L))
+                .thenReturn(List.of());
+
         owner.setUsedStorage(100L);
-        when(userRepository.findWithLockById(1L)).thenReturn(Optional.of(owner));
+
+        when(userRepository.findWithLockById(1L))
+                .thenReturn(Optional.of(owner));
 
         fileService.deleteFile(5L, 1L);
 
@@ -170,7 +217,8 @@ class FileServiceTest {
         assertThat(file.getDeletedAt()).isNotNull();
         assertThat(file.getParentFolder()).isNull();
 
-        verify(storageService, never()).delete(anyString());
+        verify(storageService, never())
+                .delete(anyString());
     }
 
     @Test
@@ -185,13 +233,20 @@ class FileServiceTest {
 
         owner.setStorageQuota(100L);
         owner.setUsedStorage(0L);
-        when(userRepository.findWithLockById(1L)).thenReturn(Optional.of(owner));
 
-        assertThatThrownBy(() -> fileService.restoreFile(5L, 1L))
+        when(userRepository.findWithLockById(1L))
+                .thenReturn(Optional.of(owner));
+
+        assertThatThrownBy(() ->
+                fileService.restoreFile(5L, 1L)
+        )
                 .isInstanceOf(QuotaExceededException.class);
 
-        verify(fileMetadataRepository, never()).save(any());
-        verify(metrics, never()).incrementRestore();
+        verify(fileMetadataRepository, never())
+                .save(any());
+
+        verify(metrics, never())
+                .incrementRestore();
     }
 
     @Test
@@ -204,12 +259,17 @@ class FileServiceTest {
 
         when(fileMetadataRepository.findByIdAndOwnerIdAndDeletedTrue(5L, 1L))
                 .thenReturn(Optional.of(file));
-        when(userRepository.findWithLockById(1L)).thenReturn(Optional.of(owner));
 
-        FileMetadata result = fileService.restoreFile(5L, 1L);
+        when(userRepository.findWithLockById(1L))
+                .thenReturn(Optional.of(owner));
+
+        FileMetadata result =
+                fileService.restoreFile(5L, 1L);
 
         assertThat(result.isDeleted()).isFalse();
         assertThat(result.getDeletedAt()).isNull();
-        verify(metrics, times(1)).incrementRestore();
+
+        verify(metrics, times(1))
+                .incrementRestore();
     }
 }
